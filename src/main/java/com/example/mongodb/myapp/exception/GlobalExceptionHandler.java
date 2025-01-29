@@ -1,5 +1,6 @@
 package com.example.mongodb.myapp.exception;
 
+import com.mongodb.MongoException;
 import org.apache.tomcat.util.http.fileupload.FileUploadException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +13,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(FileUploadException.class)
     public ResponseEntity<String> handleFileUploadException(FileUploadException e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+    }
+
+    @ExceptionHandler(MongoException.class)
+    public ResponseEntity<String> handleMongoException(FileUploadException e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("MongoDB error occurred: " + e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

@@ -29,6 +29,5 @@ public class PdfMetadata {
     private List<Status> statuses;
     private List<Page> pages; // 이미 정의된 페이지 배열
     private TextFullSummary textFullSummary;
-
-
 }
+
