@@ -23,4 +23,8 @@ public class DocumentService {
     public Optional<PdfMetadata> getMetadataById(String id) {
         return pdfMetadataRepository.findById(id);
     }
+
+    public PdfMetadata saveDocumentMetadata(PdfMetadata metadata) {
+        return pdfMetadataRepository.save(metadata);
+    }
 }
