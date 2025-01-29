@@ -1,5 +1,6 @@
 package com.example.mongodb.myapp.controller;
 
+import com.example.mongodb.myapp.model.Page;
 import com.example.mongodb.myapp.model.PdfMetadata;
 import com.example.mongodb.myapp.service.DocumentService;
 import com.example.mongodb.myapp.service.MinioService;
@@ -73,4 +74,13 @@ public class DocumentController {
         }
 
     }
+
+    // 페이지 추가
+    @PostMapping("/{id}/pages")
+    public ResponseEntity<String> addPage(@PathVariable String id, @RequestBody Page newPage) {
+        // id는 문서 번호
+        documentService.addPageToDocument(id, newPage);
+        return ResponseEntity.ok("Page added successfully.");
+    }
+    
 }
