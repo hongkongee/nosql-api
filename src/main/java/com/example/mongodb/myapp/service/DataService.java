@@ -54,7 +54,31 @@ public class DataService {
                 String fieldName = fieldNames.next();
                 JsonNode valueNode = criteriaJson.get(fieldName);
                 // 조건에 따라 Criteria 추가
-                if (valueNode.isObject()) {
+                if (valueNode.isArray()) {
+                    // and 또는 or 문
+                    // OR 조건 처리
+                    if (criteriaJson.has("$or")) {
+                        log.info("or begin");
+                        List<Criteria> orCriteriaList = new ArrayList<>();
+                        // criteriaJson.get("$or")은 array
+                        for (JsonNode orNode : criteriaJson.get("or")) {
+                            orCriteriaList.add(parseCriteria(orNode));
+                        }
+                        query.addCriteria(new Criteria().orOperator(orCriteriaList.toArray(new Criteria[0])));
+                    }
+
+                    // AND 조건 처리
+                    if (criteriaJson.has("$and")) {
+                        log.info("and begin");
+                        List<Criteria> andCriteriaList = new ArrayList<>();
+                        for (JsonNode andNode : criteriaJson.get("and")) {
+                            andCriteriaList.add(parseCriteria(andNode));
+                        }
+                        query.addCriteria(new Criteria().andOperator(andCriteriaList.toArray(new Criteria[0])));
+                    }
+
+                } else if (valueNode.isObject()) {
+                    // $ 옵션
                     if (valueNode.has("$gte")) {
                         query.addCriteria(Criteria.where(fieldName).gte(valueNode.get("$gte").asInt()));
                     } else if (valueNode.has("$lte")) {
@@ -103,7 +127,7 @@ public class DataService {
             Iterator<String> projectionFieldNames = projectionJson.fieldNames();
             while (projectionFieldNames.hasNext()) {
                 String fieldName = projectionFieldNames.next();
-                query.fields().include(fieldName);
+                query.fields().exclude("_id").include(fieldName);
             }
         }
 
@@ -124,4 +148,51 @@ public class DataService {
         List<Document> documentList = mongoTemplate.find(query, Document.class, collectionName);
         return  documentList; // 적절한 컬렉션 이름으로 변경
     }
+
+    // 조건 처리 로직 (json object를 넣으면 조건문 반환)
+    private Criteria parseCriteria(JsonNode criteriaNode) {
+        Criteria criteria = new Criteria();
+
+        // criteriaNode = { "age": { "$gte": 25, $lte": 30  } }
+        criteriaNode.fieldNames().forEachRemaining(fieldName -> {
+            // conditionNode = { "$gte": 25, $lte": 30  } -> 여러개의 $ 필드가 있는 경우 고려 필요
+            JsonNode conditionNode = criteriaNode.get(fieldName);
+            if (conditionNode.isObject()) {
+                // 각 연산자에 따라 처리
+                if (conditionNode.has("$gte")) {
+                    criteria.and(fieldName).gte(conditionNode.get("$gte").asInt());
+                } else if (conditionNode.has("$lte")) {
+                    criteria.and(fieldName).lte(conditionNode.get("$lte").asInt());
+                } else if (conditionNode.has("$gt")) {
+                    criteria.and(fieldName).gt(conditionNode.get("$gt").asInt());
+                } else if (conditionNode.has("$lt")) {
+                    criteria.and(fieldName).lt(conditionNode.get("$lt").asInt());
+                } else if (conditionNode.has("$eq")) {
+                    criteria.and(fieldName).is(conditionNode.get("$eq").asInt());
+                } else if (conditionNode.has("$ne")) {
+                    criteria.and(fieldName).ne(conditionNode.get("$ne").asInt());
+                } else if (conditionNode.has("$nin")) {
+                    List<String> ninList = new ArrayList<>();
+                    conditionNode.get("$nin").forEach(ninNode -> ninList.add(ninNode.asText()));
+                    criteria.and(fieldName).nin(ninList);
+                } else if (conditionNode.has("$in")) {
+                    List<String> inList = new ArrayList<>();
+                    conditionNode.get("$in").forEach(inNode -> inList.add(inNode.asText()));
+                    criteria.and(fieldName).in(inList);
+                }
+            } else {
+                if (criteriaNode.isInt()) {
+                    criteria.and(fieldName).is(criteriaNode.asInt());
+                } else if (criteriaNode.isTextual()) {
+                    criteria.and(fieldName).is(criteriaNode.asText());
+                }
+            }
+
+            log.info(String.valueOf(criteria));
+        });
+        return criteria;
+    }
+
+
+
 }
