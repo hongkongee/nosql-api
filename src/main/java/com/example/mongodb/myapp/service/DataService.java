@@ -116,6 +116,32 @@ public class DataService {
         }
     }
 
+    public String deleteDocuments(JsonNode filterJson, String collectionName) throws Exception {
+        try {
+
+            Query query = new Query();
+
+            if (filterJson != null && filterJson.size() > 0) {
+                // 조건이 있을 경우 필터 처리 (조건을 담은 Query 객체 생성)
+                query = getQuery(filterJson);
+            }
+
+            if (query == null) {
+                throw new IllegalArgumentException("Invalid filter conditions");
+            }
+
+
+            mongoTemplate.remove(query, collectionName);
+
+
+
+            return "Successfully deleted data from collection " + collectionName;
+        } catch (Exception e) {
+            e.printStackTrace(); // 예외 처리
+            throw new Exception("Error while removing documents", e);
+        }
+    }
+
     /**
      *
      * @param updateJson Json 형식의 SET절 데이터 (필드명-값 pair)
@@ -143,6 +169,11 @@ public class DataService {
                     update.unset(dataFieldName);
                 });
             } else if (fieldName.equals("arrayPush")) {
+                fieldValue.forEach(field -> {
+                    String dataFieldName = field.fieldNames().next();
+                    update.push(dataFieldName, field.get(dataFieldName).asText());
+                });
+            } else if (fieldName.equals("arraySetPush")) {
                 fieldValue.forEach(field -> {
                     String dataFieldName = field.fieldNames().next();
                     update.addToSet(dataFieldName, field.get(dataFieldName).asText());

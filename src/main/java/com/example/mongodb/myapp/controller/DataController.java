@@ -62,7 +62,17 @@ public class DataController {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
 
+    @PostMapping("/delete-documents")
+    public ResponseEntity<String> deleteDocuments(@RequestParam String collectionName, @RequestBody JsonNode requestBody) {
 
+        try {
+            JsonNode filterJson = requestBody.get("filter");
+            String result = dataService.deleteDocuments(filterJson, collectionName);
+            return new ResponseEntity<>(result, HttpStatus.CREATED);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
