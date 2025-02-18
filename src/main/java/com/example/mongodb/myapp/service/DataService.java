@@ -31,7 +31,7 @@ public class DataService {
         this.objectMapper = objectMapper;
     }
 
-    public String insertDocumentsFromJson(String collectionName, String jsonArrayString) throws Exception {
+    public String insertDocuments(String collectionName, String jsonArrayString) throws Exception {
         try {
             MongoCollection<Document> collection = mongoTemplate.getCollection(collectionName);
 
@@ -42,67 +42,121 @@ public class DataService {
 
         } catch (Exception e) {
             e.printStackTrace(); // 예외 처리
-            throw new Exception();
+            throw new Exception("Error while inserting documents", e);
         }
     }
 
-    public List<Document> findDocuments(JsonNode criteriaJson, JsonNode projectionJson, JsonNode sortJson, String collectionName) {
-        // 조건 쿼리문 생성
-        Query query = getQuery(criteriaJson);
+    public List<Document> findDocuments(JsonNode criteriaJson, JsonNode projectionJson, JsonNode sortJson, String collectionName) throws Exception {
 
-        // 프로젝션 설정
-        if (projectionJson != null) {
-            Iterator<String> projectionFieldNames = projectionJson.fieldNames();
-            while (projectionFieldNames.hasNext()) {
-                String fieldName = projectionFieldNames.next();
-                query.fields().exclude("_id").include(fieldName);
+        try {
+            // 조건 쿼리문 생성
+            Query query = getQuery(criteriaJson);
+            // Query query = new Query();
+
+            // 프로젝션 설정
+            if (projectionJson != null) {
+                Iterator<String> projectionFieldNames = projectionJson.fieldNames();
+                while (projectionFieldNames.hasNext()) {
+                    String fieldName = projectionFieldNames.next();
+                    query.fields().exclude("_id").include(fieldName);
+                }
             }
-        }
 
-        // 정렬 설정
-        /*
-        if (sortJson != null) {
-            Iterator<String> sortFieldNames = sortJson.fieldNames();
-            while (sortFieldNames.hasNext()) {
-                String fieldName = sortFieldNames.next();
-                int order = sortJson.get(fieldName).asInt();
-                query.with(Sort.by(order == 1 ? Sort.Order.asc(fieldName) : Sort.Order.desc(fieldName)));
+            // 정렬 설정
+            /*
+            if (sortJson != null) {
+                Iterator<String> sortFieldNames = sortJson.fieldNames();
+                while (sortFieldNames.hasNext()) {
+                    String fieldName = sortFieldNames.next();
+                    int order = sortJson.get(fieldName).asInt();
+                    query.with(Sort.by(order == 1 ? Sort.Order.asc(fieldName) : Sort.Order.desc(fieldName)));
+                }
             }
+
+             */
+
+            // 도큐먼트 검색
+            List<Document> documentList = mongoTemplate.find(query, Document.class, collectionName);
+            return  documentList; // 적절한 컬렉션 이름으로 변경
+
+        } catch (Exception e) {
+            e.printStackTrace(); // 예외 처리
+            throw new Exception("Error while finding documents", e);
         }
-
-         */
-
-        // 도큐먼트 검색
-        List<Document> documentList = mongoTemplate.find(query, Document.class, collectionName);
-        return  documentList; // 적절한 컬렉션 이름으로 변경
     }
 
-    public String updateDocuments(JsonNode filterJson, JsonNode updateJson, String collectionName) throws Exception {
+    public String updateDocuments(JsonNode filterJson, JsonNode updateJson, Boolean isUpsert, String collectionName) throws Exception {
 
         try {
 
-        // 수정 조건 생성
-        Query query = getQuery(filterJson);
+            // 수정 조건 생성 (WHERE 절)
+            Query query = getQuery(filterJson);
 
-        // 수정 내용 생성
-        Update update = new Update();
-        // update 부분을 동적으로 처리
-        processUpdateFields(update, updateJson);
+            if (query == null) {
+            throw new IllegalArgumentException("Invalid filter conditions");
+            }
 
-        // updateMany 실행
-        mongoTemplate.updateMulti(query, update, "collection_name");
-        return "Successfully updated data into collection " + collectionName;
+            // 수정 내용 생성 (SET 절)
+            // update 부분을 동적으로 처리
+            Update update = processUpdateFields(updateJson);
+
+
+            // Upsert 처리
+            if (isUpsert) {
+                mongoTemplate.upsert(query, update, collectionName);
+            } else {
+                mongoTemplate.updateMulti(query, update, collectionName);
+            }
+
+
+            return "Successfully updated data into collection " + collectionName;
         } catch (Exception e) {
             e.printStackTrace(); // 예외 처리
-            throw new Exception();
+            throw new Exception("Error while updating documents", e);
         }
     }
 
-    private void processUpdateFields(Update update, JsonNode updateJson) {
+    /**
+     *
+     * @param updateJson Json 형식의 SET절 데이터 (필드명-값 pair)
+     * @return Update 타입
+     */
+    private Update processUpdateFields(JsonNode updateJson) {
+        Update update = new Update();
+
         Iterator<String> fieldNames = updateJson.fieldNames();
         while (fieldNames.hasNext()) {
             String fieldName = fieldNames.next();
             JsonNode fieldValue = updateJson.get(fieldName);
+
+            // 필드 값에 따라 다른 업데이트 처리
+            if (fieldName.equals("set")) {
+                fieldValue.forEach(field -> {
+
+
+                    String dataFieldName = field.fieldNames().next();
+                    update.set(dataFieldName, field.get(dataFieldName).asText());
+                });
+            } else if (fieldName.equals("unset")) {
+                fieldValue.forEach(field -> {
+                    String dataFieldName = field.fieldNames().next();
+                    update.unset(dataFieldName);
+                });
+            } else if (fieldName.equals("arrayPush")) {
+                fieldValue.forEach(field -> {
+                    String dataFieldName = field.fieldNames().next();
+                    update.addToSet(dataFieldName, field.get(dataFieldName).asText());
+                });
+            } else if (fieldName.equals("arrayPull")) {
+                fieldValue.forEach(field -> {
+                    String dataFieldName = field.fieldNames().next();
+                    update.pull(dataFieldName, field.get(dataFieldName).asText());
+                });
+            }
+
+
+
+            /*
             // 필드 타입에 따라 처리
             if (fieldValue.isInt()) {
                 update.set(fieldName, fieldValue.asInt());
@@ -119,15 +173,33 @@ public class DataService {
                     list.add(arrayItem.asText());
                 }
                 update.set(fieldName, list);
+            } else if (fieldValue.isObject()) {
+                // 오브젝트 타입: 특수한 SET
+                update.set(fieldName, fieldValue.asText());
             } else {
                 // 필요한 경우 다른 타입 처리 추가
                 update.set(fieldName, fieldValue.asText());
             }
         }
+
+             */
+
+        }
+        return update;
     }
 
+    /**
+     *
+     * @param criteriaJson Json 형식의 조건(WHERE) 데이터
+     * @return query 쿼리 객체
+     * @exception IllegalArgumentException 입력 파라미터 criteria가 null값인 경우 예외 처리
+     */
     @NotNull
     private Query getQuery(JsonNode criteriaJson) {
+        if (criteriaJson == null) {
+            throw new IllegalArgumentException("criteriaJson cannot be null");
+        }
+
         Query query = new Query();
 
         // 검색 조건 추가
@@ -138,7 +210,6 @@ public class DataService {
                 JsonNode valueNode = criteriaJson.get(fieldName);
                 // 조건에 따라 Criteria 추가
                 if (valueNode.isArray()) {
-                    // and 또는 or 문
                     // OR 조건 처리
                     if (criteriaJson.has("$or")) {
                         log.info("or begin");
@@ -161,15 +232,18 @@ public class DataService {
                     }
 
                 } else if (valueNode.isObject()) {
-                    // valueNode = { "$in": ["Changwon"] }
-                    // $ 옵션 처리
-                    addCriteriaFromObject(query, fieldName, valueNode);
+                    // $ 옵션 처리 (특정 범위인 경우를 조회)
+                    Criteria newCriteria = addCriteriaFromObject(fieldName, valueNode);
+                    query.addCriteria(newCriteria);
+
+
                 } else {
+                    // 필드가 특정 값인 경우를 조회
                     if (valueNode.isInt()) {
                         // 숫자 타입인 경우
                         query.addCriteria(Criteria.where(fieldName).is(valueNode.asInt()));
                     } else if (valueNode.isTextual()) {
-                        // 문자열 타입 (또는 다른 타입)인 경우
+                        // 그 외 타입인 경우
                         query.addCriteria(Criteria.where(fieldName).is(valueNode.asText()));
                     }
                 }
@@ -178,26 +252,42 @@ public class DataService {
         return query;
     }
 
-    private void addCriteriaFromObject(Query query, String fieldName, JsonNode valueNode) {
+    /**
+    * 조건과 관련한 키-값 pair를 전달하면 쿼리의 Criteria(조건문)을 생성
+     *
+    * @param fieldName 적용할 필드 이름
+     * @param valueNode Json 형식의 조건 데이터
+     * @return creteria 생성된 Criteria 객체
+    */
+    private Criteria addCriteriaFromObject(String fieldName, JsonNode valueNode) {
+        Query query = new Query();
+        Criteria creteria = new Criteria();
+
         // valueNode = { "$in": ["Changwon"] }
         // 조건에 따라서 Criteria를 추가
         if (valueNode.has("$gte")) {
             query.addCriteria(Criteria.where(fieldName).gte(valueNode.get("$gte").asInt()));
+            creteria = creteria.and(fieldName).gte(valueNode.get("$gte").asInt());
         }
         if (valueNode.has("$lte")) {
             query.addCriteria(Criteria.where(fieldName).lte(valueNode.get("$lte").asInt()));
+            creteria = creteria.and(fieldName).lte(valueNode.get("$lte").asInt());
         }
         if (valueNode.has("$gt")) {
             query.addCriteria(Criteria.where(fieldName).gt(valueNode.get("$gt").asInt()));
+            creteria = creteria.and(fieldName).gt(valueNode.get("$gt").asInt());
         }
         if (valueNode.has("$lt")) {
             query.addCriteria(Criteria.where(fieldName).lt(valueNode.get("$lt").asInt()));
+            creteria = creteria.and(fieldName).lt(valueNode.get("$lt").asInt());
         }
         if (valueNode.has("$eq")) {
             query.addCriteria(Criteria.where(fieldName).is(valueNode.get("$eq").asInt()));
+            creteria = creteria.and(fieldName).is(valueNode.get("$eq").asInt());
         }
         if (valueNode.has("$ne")) {
             query.addCriteria(Criteria.where(fieldName).ne(valueNode.get("$ne").asInt()));
+            creteria = creteria.and(fieldName).ne(valueNode.get("$ne").asInt());
         }
         if (valueNode.has("$nin")) {
             List<String> ninList = new ArrayList<>();
@@ -205,6 +295,7 @@ public class DataService {
                 ninList.add(ninNode.asText());
             }
             query.addCriteria(Criteria.where(fieldName).nin(ninList));
+            creteria = creteria.and(fieldName).nin(ninList);
         }
         if (valueNode.has("$in")) {
             List<String> inList = new ArrayList<>();
@@ -212,7 +303,9 @@ public class DataService {
                 inList.add(inNode.asText());
             }
             query.addCriteria(Criteria.where(fieldName).in(inList));
+            creteria = creteria.and(fieldName).in(inList);
         }
+        return creteria;
     }
 
     // 조건 처리 로직 (json object를 넣으면 조건문 반환)

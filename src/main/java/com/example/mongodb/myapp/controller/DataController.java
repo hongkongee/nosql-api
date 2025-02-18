@@ -25,7 +25,7 @@ public class DataController {
     public ResponseEntity<String> insertDocuments(@RequestParam String collectionName, @RequestBody String jsonArrayString) {
         String response = null;
         try {
-            response = dataService.insertDocumentsFromJson(collectionName, jsonArrayString);
+            response = dataService.insertDocuments(collectionName, jsonArrayString);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -56,7 +56,8 @@ public class DataController {
         try {
             JsonNode filterJson = requestBody.get("filter");
             JsonNode updateJson = requestBody.get("update");
-            String result = dataService.updateDocuments(filterJson, updateJson, collectionName);
+            Boolean isUpsert = requestBody.get("upsert").asBoolean();
+            String result = dataService.updateDocuments(filterJson, updateJson, isUpsert, collectionName);
             return new ResponseEntity<>(result, HttpStatus.CREATED);
         } catch (Exception e) {
             throw new RuntimeException(e);
